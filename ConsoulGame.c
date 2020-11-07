@@ -1,58 +1,44 @@
 #include <Windows.h>
 #include <stdio.h>
+#include "Frames.h"
 
 #define ESC "\x1b"
 #define cWidth 120
 #define cHeight 30
 
-char mainMenu[] =
-"########################################################################################################################"
-"########################################################################################################################"
-"########################################################################################################################"
-"########################################################################################################################"
-"####/                   ####/                   ####/         #############         ####/                   ############"
-"###/#                   ###/#                   ###/#    #    #############    #    ###/#                   ############"
-"##|##                   ##|##                   ##|##    ##    ###########    ##    ##|##    ##############/############"
-"##|##    ##############/##|##    ########|##    ##|##    \\##    #########    |##    ##|##    _____________/#############"
-"##|##    _____________/###|##    ########|##    ##|##    #\\##    #######    #|##    ##|##    ###########################"
-"##|##    #################|##    ########|##    ##|##    ##\\##    #####    ##|##    ##|##    ###########################"
-"##|##    #################|##    ########|##    ##|##    ###\\##    ###    ###|##    ##|##    ###########################"
-"##|##    #################|##    ########|##    ##|##    ####\\##    #    ####|##    ##|##                   ############"
-"##|##    #######/       ##|##                   ##|##    #####\\##        ####|##    ##|##                   ############"
-"##|##    ######/#       ##|##                   ##|##    ######\\/#######/####|##    ##|##    ##############/############"
-"##|##    #####|#/###    ##|##    ########|##    ##|##    ######/_______/#####|##    ##|##    _____________/#############"
-"##|##    #####|/____    ##|##    ########|##    ##|##    ####################|##    ##|##    ###########################"
-"##|##    ###########    ##|##    ########|##    ##|##    ####################|##    ##|##    ###########################"
-"##|##                   ##|##    ########|##    ##|##    ####################|##    ##|##    ###########################"
-"##|##                   ##|##    ########|##    ##|##    ####################|##    ##|##                   ############"
-"##|##                   ##|##    ########|##    ##|##    ####################|##    ##|##                   ############"
-"##|#/##################/##|#/###/########|#/###/##|#/###/####################|#/###/##|#/##################/############"
-"##|/__________________/###|/___/#########|/___/###|/___/#####################|/___/###|/__________________/#############"
-"########################################################################################################################"
-"########################################################################################################################"
-"###############################################__##____###__####____####____############################################"
-"##############################################//####||###//\\\\###||##\\####||#############################################"
-"##############################################\\\\_###||##||__||##||__/####||#############################################"
-"################################################\\\\##||##||__||##||##\\####||#############################################"
-"###############################################_//##||##||##||##||###\\###||#############################################"
-"########################################################################################################################"
-"########################################################################################################################";
+char *screenBuff = NULL;
+BOOL newFrame = TRUE;
+int level = 0;
 
-void DrawFrame(char *frame) {
-    printf(ESC "7"); // Save cursor position in memory
-    printf(ESC "[0;0H"); // Move cursor to origin on console
-    /*for (int h = 0; h < cHeight-1; h++) {
-        for (int w = 0; w < cWidth; w++) {
-            printf("%s", frame); // screenBuff treated as a 1D array
-        }
-        printf(ESC "B" ESC "[%uD", cWidth); // Move down one line and "cWidth" amount left
-    }*/
-    printf("%s", frame); // screenBuff treated as a 1D array
-    printf(ESC "8"); // Restore cursor position from memory
+void DrawFrame() {
+    if (newFrame) {
+        printf(ESC "7"); // Save cursor position in memory
+        printf(ESC "[0;0H"); // Move cursor to origin on console
+		printf(ESC "[%uX", cWidth * cHeight); // Sequence for erasing <n> number of characters from cursor position
+        printf("%s", screenBuff); // screenBuff treated as a 1D array
+        printf(ESC "[0m"); // Reset colors
+        printf(ESC "8"); // Restore cursor position from memory
+        newFrame = FALSE;
+    }
 }
 
-void AddFrameObject(wchar_t buff, int width, int height, int X, int Y) {
-    // Take buffer of characters (buff), draw line by line starting at X, Y
+// Take buffer of characters (buff), draw line by line starting at X, Y
+void AddFrameObject(char *buff, unsigned int width, unsigned int height, unsigned int X, unsigned int Y) {
+    // Account for out of bounds objects in X axis
+    if (X + width > cWidth) {
+        width -= cWidth-X;
+    }
+    // Account for out of bounds objects in X axis
+    if (Y + height > cHeight) {
+        height -= cHeight-Y;
+    }
+    // Write to screenBuff
+    for (int h = 0; h < height; h++) {
+        for (int w = 0; w < width; w++) {
+            screenBuff[((Y+h)*cWidth)+(X+w)] = buff[(h*width)+w]; // Brain melting math
+        }
+    }
+    newFrame = TRUE;
 }
 
 int ConsoleSetup(HANDLE hConIn, HANDLE hConOut) {
@@ -66,15 +52,15 @@ int ConsoleSetup(HANDLE hConIn, HANDLE hConOut) {
 
     // Set up input mode
     DWORD modeFlags = 0;
-    /*
     if(!GetConsoleMode(hConIn, &modeFlags)) { // If function fails, return value is ZERO
         return GetLastError();
     }
 
-    modeFlags |= ENABLE_MOUSE_INPUT;
+    modeFlags = ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS; // Add additional flags if necessary
+	//https://stackoverflow.com/questions/23666035/how-to-make-readconsoleinput-notice-mouse-events-when-program-is-running-from
     if(!SetConsoleMode(hConIn, modeFlags)) { // Enable mouse input for console
         return GetLastError();
-    }*/
+    }
 
     // Set up output
     if(!GetConsoleMode(hConOut, &modeFlags)) { // If function fails, return value is ZERO
@@ -91,13 +77,11 @@ int ConsoleSetup(HANDLE hConIn, HANDLE hConOut) {
 int main() {
     // Used to store all on-screen characters
     int screenSize = cWidth*cHeight + 1000; // + 1000 for null term + any escape characters, VT sequences etc.
-    char *screenBuff = (char *) calloc(screenSize, sizeof(char)); // Allocate heap memory
+    screenBuff = (char *) calloc(screenSize, sizeof(char)); // Allocate heap memory
     if (screenBuff == NULL) {
         printf("[-] Not enough memory; exiting.");
         return 1;
     }
-
-    strcpy(screenBuff, mainMenu);
     // Setup console
     HANDLE hConIn, hConOut;
 
@@ -113,16 +97,28 @@ int main() {
         return result;
     }
 
+    char test[] =   "TEST"
+                    "ESTE"
+                    "STES"
+                    "TEST";
+
+    
+    AddFrameObject(mainMenu, cWidth, cHeight, 0, 0);
+    DrawFrame();
+    Sleep(1000);
+    AddFrameObject(test, 4, 4, 5, 20);
+    DrawFrame();
+    Sleep(1000);
+
     // Run game loop here:
+    while(1) {
+        AddFrameObject(starFrameA, cWidth, cHeight, 0, 0);
+        DrawFrame();
+        Sleep(1000);
+        AddFrameObject(starFrameB, cWidth, cHeight, 0, 0);
+        DrawFrame();
+        Sleep(1000);
+    }
 
-    /*
-    printf(ESC "[5;10H");
-    printf(ESC "[48;2;128;4;256m ");
-    printf("test");
-    */
-
-    DrawFrame(screenBuff);
-	
-	getch();
     return 0;
 }

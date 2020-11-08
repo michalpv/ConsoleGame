@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdio.h>
+#include <time.h>
 #include "Frames.h"
 
 #define ESC "\x1b"
@@ -8,18 +9,36 @@
 
 char *screenBuff = NULL;
 BOOL newFrame = TRUE;
-int level = 0;
 
+// Only draw frame if new frame is set
 void DrawFrame() {
-    if (newFrame) {
-        printf(ESC "7"); // Save cursor position in memory
-        printf(ESC "[0;0H"); // Move cursor to origin on console
-		printf(ESC "[%uX", cWidth * cHeight); // Sequence for erasing <n> number of characters from cursor position
-        printf("%s", screenBuff); // screenBuff treated as a 1D array
-        printf(ESC "[0m"); // Reset colors
-        printf(ESC "8"); // Restore cursor position from memory
-        newFrame = FALSE;
+    printf(ESC "7"); // Save cursor position in memory
+    printf(ESC "[0;0H"); // Move cursor to origin on console
+    printf(ESC "[%uX", cWidth * cHeight); // Sequence for erasing <n> number of characters from cursor position
+    printf("%s", screenBuff); // screenBuff treated as a 1D array
+    printf(ESC "[0m"); // Reset colors
+    printf(ESC "8"); // Restore cursor position from memory
+    newFrame = FALSE;
+}
+
+// Will return Win32 defined datatype by pointer with mouse event information
+BOOL GetMouseInputRecord(HANDLE hConIn, MOUSE_EVENT_RECORD *mouseRecord) {
+    DWORD eventsAvailable = 0;
+    GetNumberOfConsoleInputEvents(hConIn, &eventsAvailable);
+    while (eventsAvailable > 0) {
+        INPUT_RECORD inRecord;
+        DWORD eventsRead;
+        if (ReadConsoleInput(hConIn, &inRecord, 1, &eventsRead)) {
+            if (inRecord.EventType == MOUSE_EVENT) {
+                memcpy(mouseRecord, &inRecord.Event.MouseEvent, sizeof(MOUSE_EVENT_RECORD));
+            }
+            eventsAvailable--;
+        }
+        else {
+            return FALSE;
+        }
     }
+    return TRUE;
 }
 
 // Take buffer of characters (buff), draw line by line starting at X, Y
@@ -74,6 +93,13 @@ int ConsoleSetup(HANDLE hConIn, HANDLE hConOut) {
     return 0;
 }
 
+BOOL isClicked(xM, yM, width, height, xB, yB) { // Keep in mind that origin cell starts at 0, therefore mouse position ranges from 0
+    if (xB < xM && xM < xB + width && yB < yM && yB + height)
+        return TRUE;
+    else
+        return FALSE;
+}
+
 int main() {
     // Used to store all on-screen characters
     int screenSize = cWidth*cHeight + 1000; // + 1000 for null term + any escape characters, VT sequences etc.
@@ -96,28 +122,52 @@ int main() {
     if (result) { // ConsoleSetup unsuccessful, return and terminate
         return result;
     }
-
-    char test[] =   "TEST"
-                    "ESTE"
-                    "STES"
-                    "TEST";
-
     
+    // Initalization:
     AddFrameObject(mainMenu, cWidth, cHeight, 0, 0);
     DrawFrame();
-    Sleep(1000);
-    AddFrameObject(test, 4, 4, 5, 20);
-    DrawFrame();
-    Sleep(1000);
+
+    int level = 0; // Start at main menu
+    // starFrame init:
+    short sceneFlipper = 1;
 
     // Run game loop here:
+    clock_t t = clock();// Get elapsed time
     while(1) {
-        AddFrameObject(starFrameA, cWidth, cHeight, 0, 0);
-        DrawFrame();
-        Sleep(1000);
-        AddFrameObject(starFrameB, cWidth, cHeight, 0, 0);
-        DrawFrame();
-        Sleep(1000);
+        switch (level) {
+            case 0: // Main menu
+                MOUSE_EVENT_RECORD mouseRecord;
+                if (GetMouseInputRecord(hConIn, &mouseRecord)) {
+                    if (mouseRecord.dwButtonState == FROM_LEFT_1ST_BUTTON_PRESSED) { // Check that left-most button is pressed
+                        // Check that START button is pressed using positional function
+                        if (isClicked(
+                            mouseRecord.dwMousePosition.X,
+                            mouseRecord.dwMousePosition.Y,
+                            34, 6, 43, 23 // Start button location
+                            )) { // bool isClicked(xM, yM, width, height, xB, yB)
+                            level = 1;
+                            t = clock(); // Reset clock after changing level
+                        }
+                    }
+                }
+                break;
+            case 1: // starFrame
+                if ((double)clock() - (double)t/CLOCKS_PER_SEC > 10) {
+                    sceneFlipper *= -1;
+                    t = clock();
+                }
+
+                if (sceneFlipper == 1) {
+                    AddFrameObject(starFrameA, cWidth, cHeight, 0, 0); // Change entire buffer
+                }
+                else if(sceneFlipper == -1) {
+                    AddFrameObject(starFrameB, cWidth, cHeight, 0, 0); // Change entire buffer
+                }
+                break;
+        }
+        if (newFrame) {
+            DrawFrame();
+        }
     }
 
     return 0;

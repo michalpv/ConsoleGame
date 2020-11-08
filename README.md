@@ -1,4 +1,4 @@
-# ConsoleGame
+# ConsoulGame
 Made for the 12-hour hackathon Cutie Hack with @cameronzhang1
 
 # Description
